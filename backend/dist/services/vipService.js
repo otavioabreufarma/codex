@@ -1,16 +1,11 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.upsertPlayerLink = upsertPlayerLink;
 exports.getPlayer = getPlayer;
 exports.applyVip = applyVip;
 exports.removeVip = removeVip;
 exports.getVipStatus = getVipStatus;
-exports.findExpiredVipEvents = findExpiredVipEvents;
-exports.notifyBot = notifyBot;
-const axios_1 = __importDefault(require("axios"));
+exports.expireVipAndCollectEvents = expireVipAndCollectEvents;
 const env_1 = require("../config/env");
 const database_1 = require("./database");
 function nowIso() {
@@ -78,7 +73,7 @@ function getVipStatus(serverIdRaw, discordId) {
     }
     return player.vip;
 }
-function findExpiredVipEvents() {
+function expireVipAndCollectEvents() {
     const serverIds = ["server1", "server2"];
     const events = [];
     for (const serverId of serverIds) {
@@ -90,9 +85,8 @@ function findExpiredVipEvents() {
             if (new Date(player.vip.expiresAt).getTime() <= Date.now()) {
                 events.push({
                     discordId: player.discordId,
-                    steamId: player.steamId,
                     serverId,
-                    previousType: player.vip.type
+                    vipType: player.vip.type
                 });
                 player.vip = { active: false, lastUpdatedAt: nowIso() };
                 player.updatedAt = nowIso();
@@ -104,9 +98,4 @@ function findExpiredVipEvents() {
         }
     }
     return events;
-}
-async function notifyBot(payload) {
-    await axios_1.default.post(env_1.env.botWebhookUrl, payload, {
-        headers: { "x-bot-webhook-token": env_1.env.botWebhookToken }
-    });
 }

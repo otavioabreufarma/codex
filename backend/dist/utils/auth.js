@@ -1,35 +1,26 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.requireServerToken = requireServerToken;
-exports.requireBotToken = requireBotToken;
-exports.verifyInfinitePaySignature = verifyInfinitePaySignature;
+exports.requirePluginToken = requirePluginToken;
+exports.requireBotApiKey = requireBotApiKey;
+exports.isInfinitePayWebhookValid = isInfinitePayWebhookValid;
 const env_1 = require("../config/env");
-function requireServerToken(req, res, next) {
+function requirePluginToken(req, res, next) {
     const token = req.header("x-api-token");
-    const serverId = req.params.serverId || req.body.serverId || req.query.serverId;
-    if (!token || !serverId || !(serverId in env_1.env.serverTokens)) {
+    if (!token || token !== env_1.env.pluginApiToken) {
         res.status(401).json({ error: "Unauthorized" });
-        return;
-    }
-    const expected = env_1.env.serverTokens[serverId];
-    if (token !== expected) {
-        res.status(401).json({ error: "Invalid token" });
         return;
     }
     next();
 }
-function requireBotToken(req, res, next) {
-    if (req.header("x-bot-token") !== env_1.env.botWebhookToken) {
+function requireBotApiKey(req, res, next) {
+    const token = req.header("x-api-key");
+    if (!token || token !== env_1.env.botApiKey) {
         res.status(401).json({ error: "Unauthorized bot" });
         return;
     }
     next();
 }
-function verifyInfinitePaySignature(req, res, next) {
+function isInfinitePayWebhookValid(req) {
     const signature = req.header("x-infinitepay-signature") || req.header("x-webhook-secret");
-    if (!signature || signature !== env_1.env.infinitepayWebhookSecret) {
-        res.status(401).json({ error: "Invalid webhook signature" });
-        return;
-    }
-    next();
+    return Boolean(signature && signature === env_1.env.infinitepayWebhookSecret);
 }

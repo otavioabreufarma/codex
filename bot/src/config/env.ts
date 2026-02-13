@@ -9,7 +9,8 @@ const required = [
   "VIP_ROLE_ID",
   "VIP_PLUS_ROLE_ID",
   "BACKEND_URL",
-  "BOT_WEBHOOK_TOKEN"
+  "BOT_API_KEY",
+  "POLLING_INTERVAL_MS"
 ] as const;
 
 for (const key of required) {
@@ -23,6 +24,6 @@ export const env = {
   vipRoleId: process.env.VIP_ROLE_ID as string,
   vipPlusRoleId: process.env.VIP_PLUS_ROLE_ID as string,
   backendUrl: process.env.BACKEND_URL as string,
-  botWebhookToken: process.env.BOT_WEBHOOK_TOKEN as string,
-  port: Number(process.env.PORT || 3001)
+  botApiKey: process.env.BOT_API_KEY as string,
+  pollingIntervalMs: Number(process.env.POLLING_INTERVAL_MS)
 };

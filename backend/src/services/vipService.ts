@@ -1,7 +1,6 @@
-import axios from "axios";
 import { env } from "../config/env";
-import { ExpirationEvent, PlayerRecord, VipType } from "../types/models";
-import { assertServer, readDb, ServerId, writeDb } from "./database";
+import { PlayerRecord, ServerId, VipType } from "../types/models";
+import { assertServer, readDb, writeDb } from "./database";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -79,9 +78,9 @@ export function getVipStatus(serverIdRaw: string, discordId: string): PlayerReco
   return player.vip;
 }
 
-export function findExpiredVipEvents(): ExpirationEvent[] {
+export function expireVipAndCollectEvents(): Array<{ discordId: string; serverId: ServerId; vipType?: VipType }> {
   const serverIds: ServerId[] = ["server1", "server2"];
-  const events: ExpirationEvent[] = [];
+  const events: Array<{ discordId: string; serverId: ServerId; vipType?: VipType }> = [];
 
   for (const serverId of serverIds) {
     const db = readDb(serverId);
@@ -93,10 +92,10 @@ export function findExpiredVipEvents(): ExpirationEvent[] {
       if (new Date(player.vip.expiresAt).getTime() <= Date.now()) {
         events.push({
           discordId: player.discordId,
-          steamId: player.steamId,
           serverId,
-          previousType: player.vip.type
+          vipType: player.vip.type
         });
+
         player.vip = { active: false, lastUpdatedAt: nowIso() };
         player.updatedAt = nowIso();
         dirty = true;
@@ -109,10 +108,4 @@ export function findExpiredVipEvents(): ExpirationEvent[] {
   }
 
   return events;
-}
-
-export async function notifyBot(payload: Record<string, unknown>): Promise<void> {
-  await axios.post(env.botWebhookUrl, payload, {
-    headers: { "x-bot-webhook-token": env.botWebhookToken }
-  });
 }

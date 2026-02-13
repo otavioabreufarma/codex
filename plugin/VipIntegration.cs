@@ -1,13 +1,12 @@
 using Newtonsoft.Json;
-using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
 using System;
 using System.Collections.Generic;
 
 namespace Oxide.Plugins
 {
-    [Info("VipIntegration", "Codex", "1.0.0")]
-    [Description("Sincroniza VIP com backend externo (Steam/Discord/InfinitePay).")]
+    [Info("VipIntegration", "Codex", "2.0.0")]
+    [Description("Integra VIP com backend HTTP externo para múltiplos servidores Rust.")]
     public class VipIntegration : CovalencePlugin
     {
         private PluginConfig _config;
@@ -18,16 +17,28 @@ namespace Oxide.Plugins
             public string ServerId = "server1";
 
             [JsonProperty("BackendUrl")]
-            public string BackendUrl = "https://api.seudominio.com";
+            public string BackendUrl = "https://backend.seudominio.com";
 
             [JsonProperty("ApiToken")]
             public string ApiToken = "troque_este_token";
 
             [JsonProperty("CheckInterval")]
             public float CheckInterval = 60f;
+        }
 
-            [JsonProperty("TrackedPlayers")]
-            public List<string> TrackedPlayers = new List<string>();
+        private class VipData
+        {
+            public bool active;
+            public string type;
+            public string expiresAt;
+        }
+
+        private class VipStatusResponse
+        {
+            public string discordId;
+            public string steamId;
+            public string serverId;
+            public VipData vip;
         }
 
         protected override void LoadDefaultConfig()
@@ -46,7 +57,7 @@ namespace Oxide.Plugins
             }
             catch
             {
-                PrintWarning("Config inválida. Gerando nova config padrão.");
+                PrintWarning("Config inválida. Gerando novo arquivo em config/VipIntegration.json");
                 LoadDefaultConfig();
             }
         }
@@ -55,88 +66,102 @@ namespace Oxide.Plugins
 
         private void Init()
         {
-            timer.Every(_config.CheckInterval, SyncTrackedPlayers);
+            timer.Every(_config.CheckInterval, () =>
+            {
+                Puts($"VipIntegration heartbeat: server={_config.ServerId}");
+            });
         }
 
-        [Command("vip.sync")]
-        private void CmdSync(IPlayer player, string command, string[] args)
+        [Command("vip.apply")]
+        private void CmdApply(IPlayer player, string command, string[] args)
+        {
+            if (!IsAllowed(player)) return;
+            if (args.Length != 2)
+            {
+                player?.Reply("Uso: vip.apply <steamId> <vip|vip+>");
+                return;
+            }
+
+            ApplyVip(args[0], args[1]);
+            player?.Reply("VIP aplicado localmente.");
+        }
+
+        [Command("vip.remove")]
+        private void CmdRemove(IPlayer player, string command, string[] args)
+        {
+            if (!IsAllowed(player)) return;
+            if (args.Length != 1)
+            {
+                player?.Reply("Uso: vip.remove <steamId>");
+                return;
+            }
+
+            RemoveVip(args[0]);
+            player?.Reply("VIP removido localmente.");
+        }
+
+        [Command("vip.check")]
+        private void CmdCheck(IPlayer player, string command, string[] args)
+        {
+            if (!IsAllowed(player)) return;
+            if (args.Length != 1)
+            {
+                player?.Reply("Uso: vip.check <discordId>");
+                return;
+            }
+
+            SyncDiscordId(args[0], player);
+        }
+
+        private bool IsAllowed(IPlayer player)
         {
             if (player != null && !player.IsAdmin)
             {
                 player.Reply("Sem permissão.");
-                return;
+                return false;
             }
-
-            SyncTrackedPlayers();
-            player?.Reply("Sincronização manual iniciada.");
+            return true;
         }
 
-        [Command("vip.track")]
-        private void CmdTrack(IPlayer player, string command, string[] args)
+        private void SyncDiscordId(string discordId, IPlayer replyTarget = null)
         {
-            if (player == null || !player.IsAdmin)
-            {
-                player?.Reply("Sem permissão.");
-                return;
-            }
-
-            if (args.Length != 1)
-            {
-                player.Reply("Uso: vip.track <discordId>");
-                return;
-            }
-
-            var discordId = args[0];
-            if (!_config.TrackedPlayers.Contains(discordId))
-            {
-                _config.TrackedPlayers.Add(discordId);
-                SaveConfig();
-            }
-
-            player.Reply($"DiscordId {discordId} adicionado ao monitoramento.");
-        }
-
-        private void SyncTrackedPlayers()
-        {
-            foreach (var discordId in _config.TrackedPlayers)
-            {
-                CheckVipAndApply(discordId);
-            }
-        }
-
-        private void CheckVipAndApply(string discordId)
-        {
-            var url = $"{_config.BackendUrl}/plugin/vip/{_config.ServerId}/{discordId}?serverId={_config.ServerId}";
-            var headers = new Dictionary<string, string>
-            {
-                ["x-api-token"] = _config.ApiToken
-            };
+            var url = $"{_config.BackendUrl}/plugin/vip/{_config.ServerId}/{discordId}";
+            var headers = new Dictionary<string, string> { ["x-api-token"] = _config.ApiToken };
 
             webrequest.Enqueue(url, null, (code, response) =>
             {
                 if (code != 200 || string.IsNullOrEmpty(response))
                 {
-                    PrintWarning($"Falha ao verificar VIP de {discordId}. HTTP {code}");
+                    var msg = $"Falha ao consultar backend. HTTP {code}";
+                    PrintWarning(msg);
+                    replyTarget?.Reply(msg);
                     return;
                 }
 
                 try
                 {
-                    var vipStatus = JsonConvert.DeserializeObject<VipStatusResponse>(response);
-                    if (vipStatus == null || string.IsNullOrEmpty(vipStatus.steamId)) return;
-
-                    if (vipStatus.vip != null && vipStatus.vip.active)
+                    var status = JsonConvert.DeserializeObject<VipStatusResponse>(response);
+                    if (status == null || string.IsNullOrEmpty(status.steamId))
                     {
-                        ApplyVip(vipStatus.steamId, vipStatus.vip.type);
+                        replyTarget?.Reply("Usuário sem vinculação Steam no backend.");
+                        return;
+                    }
+
+                    if (status.vip != null && status.vip.active)
+                    {
+                        ApplyVip(status.steamId, status.vip.type);
+                        replyTarget?.Reply($"VIP {status.vip.type} ativo aplicado para {status.steamId}.");
                     }
                     else
                     {
-                        RemoveVip(vipStatus.steamId);
+                        RemoveVip(status.steamId);
+                        replyTarget?.Reply($"Usuário {status.steamId} sem VIP ativo.");
                     }
                 }
                 catch (Exception ex)
                 {
-                    PrintWarning($"Erro parse VIP status: {ex.Message}");
+                    PrintWarning($"Erro parse status: {ex.Message}");
+                    replyTarget?.Reply("Erro ao processar resposta do backend.");
                 }
             }, this, RequestMethod.GET, headers);
         }
@@ -145,29 +170,14 @@ namespace Oxide.Plugins
         {
             var group = type == "vip+" ? "vipplus" : "vip";
             server.Command($"oxide.usergroup add {steamId} {group}");
-            Puts($"VIP aplicado para {steamId} ({group})");
+            Puts($"VIP aplicado: {steamId} -> {group}");
         }
 
         private void RemoveVip(string steamId)
         {
             server.Command($"oxide.usergroup remove {steamId} vip");
             server.Command($"oxide.usergroup remove {steamId} vipplus");
-            Puts($"VIP removido para {steamId}");
-        }
-
-        private class VipStatusResponse
-        {
-            public string discordId;
-            public string steamId;
-            public string serverId;
-            public VipData vip;
-        }
-
-        private class VipData
-        {
-            public bool active;
-            public string type;
-            public string expiresAt;
+            Puts($"VIP removido: {steamId}");
         }
     }
 }
