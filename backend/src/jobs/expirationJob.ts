@@ -1,13 +1,16 @@
 import { env } from "../config/env";
-import { findExpiredVipEvents, notifyBot } from "../services/vipService";
+import { enqueueBotEvent } from "../services/eventQueueService";
+import { expireVipAndCollectEvents } from "../services/vipService";
 
 export function startExpirationJob(): void {
-  setInterval(async () => {
-    const expired = findExpiredVipEvents();
+  setInterval(() => {
+    const expired = expireVipAndCollectEvents();
     for (const event of expired) {
-      await notifyBot({
-        event: "vip_expired",
-        ...event
+      enqueueBotEvent({
+        type: "VIP_EXPIRED",
+        discordId: event.discordId,
+        serverId: event.serverId,
+        vipType: event.vipType
       });
     }
   }, env.checkExpiredIntervalMs);

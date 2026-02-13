@@ -1,10 +1,9 @@
 import fs from "fs";
 import path from "path";
-import { ServerDb } from "../types/models";
+import { ServerDb, ServerId } from "../types/models";
 
 const dataDir = path.join(process.cwd(), "data");
-const validServers = ["server1", "server2"] as const;
-export type ServerId = (typeof validServers)[number];
+const validServers: ServerId[] = ["server1", "server2"];
 
 function getFile(serverId: ServerId): string {
   return path.join(dataDir, `${serverId}.json`);

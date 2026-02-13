@@ -1,4 +1,5 @@
 export type VipType = "vip" | "vip+";
+export type ServerId = "server1" | "server2";
 
 export interface VipInfo {
   active: boolean;
@@ -10,7 +11,7 @@ export interface VipInfo {
 export interface PlayerRecord {
   discordId: string;
   steamId: string;
-  serverId: string;
+  serverId: ServerId;
   vip: VipInfo;
   createdAt: string;
   updatedAt: string;
@@ -18,8 +19,9 @@ export interface PlayerRecord {
 
 export interface PaymentRecord {
   orderNsu: string;
+  transactionNsu?: string;
   discordId: string;
-  serverId: string;
+  serverId: ServerId;
   type: VipType;
   amount: number;
   checkoutUrl?: string;
@@ -32,14 +34,19 @@ export interface PaymentRecord {
 }
 
 export interface ServerDb {
-  serverId: string;
+  serverId: ServerId;
   players: Record<string, PlayerRecord>;
   payments: Record<string, PaymentRecord>;
 }
 
-export interface ExpirationEvent {
+export type BotEventType = "PAYMENT_CONFIRMED" | "VIP_EXPIRED";
+
+export interface BotEvent {
+  eventId: string;
+  type: BotEventType;
   discordId: string;
-  steamId: string;
-  serverId: string;
-  previousType?: VipType;
+  serverId: ServerId;
+  vipType?: VipType;
+  createdAt: string;
+  processed: boolean;
 }

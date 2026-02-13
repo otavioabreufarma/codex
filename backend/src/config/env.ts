@@ -9,13 +9,10 @@ const required = [
   "INFINITEPAY_WEBHOOK_SECRET",
   "VIP_PRICE",
   "VIP_PLUS_PRICE",
-  "SESSION_SIGNING_SECRET",
-  "SERVER1_API_TOKEN",
-  "SERVER2_API_TOKEN",
-  "BOT_WEBHOOK_TOKEN",
-  "BOT_WEBHOOK_URL",
+  "BOT_API_KEY",
   "CHECKOUT_REDIRECT_URL",
-  "CHECKOUT_WEBHOOK_URL"
+  "CHECKOUT_WEBHOOK_URL",
+  "PLUGIN_API_TOKEN"
 ] as const;
 
 for (const key of required) {
@@ -36,13 +33,9 @@ export const env = {
   vipDurationDays: Number(process.env.VIP_DURATION_DAYS || 30),
   vipPlusDurationDays: Number(process.env.VIP_PLUS_DURATION_DAYS || 30),
   checkExpiredIntervalMs: Number(process.env.CHECK_EXPIRED_INTERVAL_MS || 60000),
-  sessionSigningSecret: process.env.SESSION_SIGNING_SECRET as string,
-  serverTokens: {
-    server1: process.env.SERVER1_API_TOKEN as string,
-    server2: process.env.SERVER2_API_TOKEN as string
-  },
-  botWebhookToken: process.env.BOT_WEBHOOK_TOKEN as string,
-  botWebhookUrl: process.env.BOT_WEBHOOK_URL as string,
+  botApiKey: process.env.BOT_API_KEY as string,
   checkoutRedirectUrl: process.env.CHECKOUT_REDIRECT_URL as string,
-  checkoutWebhookUrl: process.env.CHECKOUT_WEBHOOK_URL as string
+  checkoutWebhookUrl: process.env.CHECKOUT_WEBHOOK_URL as string,
+  pluginApiToken: process.env.PLUGIN_API_TOKEN as string,
+  sessionSigningSecret: process.env.SESSION_SIGNING_SECRET || "replace-me"
 };

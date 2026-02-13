@@ -1,17 +1,64 @@
-import express from "express";
 import { Client, Events, GatewayIntentBits, GuildMember } from "discord.js";
 import { env } from "./config/env";
 import { registerCommands } from "./commands/register";
 import { sendVipPanel } from "./interactions/panel";
-import { requestCheckout, requestSteamLink } from "./services/backendClient";
+import {
+  ackBotEvent,
+  fetchBotEvents,
+  getSteamLinkStatus,
+  requestCheckout,
+  requestSteamLink
+} from "./services/backendClient";
 import { getUserServer, setUserServer } from "./services/sessionStore";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
 });
 
+async function processPendingEvents(): Promise<void> {
+  const events = await fetchBotEvents();
+  if (events.length === 0) return;
+
+  const guild = await client.guilds.fetch(env.guildId);
+
+  for (const event of events) {
+    try {
+      const member = (await guild.members.fetch(event.discordId)) as GuildMember;
+
+      if (event.type === "PAYMENT_CONFIRMED") {
+        const roleId = event.vipType === "vip+" ? env.vipPlusRoleId : env.vipRoleId;
+        await member.roles.add(roleId);
+        await member.send(`Pagamento confirmado. VIP ${event.vipType?.toUpperCase()} ativado com sucesso.`);
+      }
+
+      if (event.type === "VIP_EXPIRED") {
+        await member.roles.remove(env.vipRoleId).catch(() => null);
+        await member.roles.remove(env.vipPlusRoleId).catch(() => null);
+        await member.send("Seu VIP expirou e os cargos foram removidos.");
+      }
+
+      await ackBotEvent(event.eventId);
+    } catch (error) {
+      console.error(`[bot] failed to process event ${event.eventId}`, error);
+    }
+  }
+}
+
+async function awaitSteamSync(discordId: string, serverId: "server1" | "server2"): Promise<boolean> {
+  const maxAttempts = 20;
+  for (let i = 0; i < maxAttempts; i += 1) {
+    const linked = await getSteamLinkStatus(discordId, serverId);
+    if (linked) return true;
+    await new Promise((resolve) => setTimeout(resolve, 15000));
+  }
+  return false;
+}
+
 client.once(Events.ClientReady, async (readyClient) => {
   await registerCommands();
+  setInterval(() => {
+    processPendingEvents().catch((error) => console.error("[bot] polling error", error));
+  }, env.pollingIntervalMs);
   console.log(`[bot] online as ${readyClient.user.tag}`);
 });
 
@@ -34,8 +81,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
     try {
       if (interaction.customId === "link_steam") {
         const authUrl = await requestSteamLink(interaction.user.id, serverId);
-        await interaction.reply({ content: `Link Steam: ${authUrl}`, ephemeral: true });
+        await interaction.reply({ content: `Abra para vincular Steam: ${authUrl}`, ephemeral: true });
         await interaction.user.send(`Vincule sua Steam (${serverId}): ${authUrl}`);
+
+        awaitSteamSync(interaction.user.id, serverId)
+          .then(async (linked) => {
+            if (linked) {
+              await interaction.user.send("Sua conta Steam foi vinculada com sucesso e sincronizada.");
+            }
+          })
+          .catch(() => null);
         return;
       }
 
@@ -58,42 +113,4 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-const webhookApp = express();
-webhookApp.use(express.json());
-
-webhookApp.post("/internal/payment-status", async (req, res) => {
-  if (req.header("x-bot-webhook-token") !== env.botWebhookToken) {
-    res.status(401).json({ error: "unauthorized" });
-    return;
-  }
-
-  const payload = req.body as {
-    event: "payment_approved" | "vip_expired";
-    discordId: string;
-    vipType?: "vip" | "vip+";
-  };
-
-  try {
-    const guild = await client.guilds.fetch(env.guildId);
-    const member = (await guild.members.fetch(payload.discordId)) as GuildMember;
-
-    if (payload.event === "payment_approved") {
-      const roleId = payload.vipType === "vip+" ? env.vipPlusRoleId : env.vipRoleId;
-      await member.roles.add(roleId);
-      await member.send(`Pagamento aprovado! Seu VIP ${payload.vipType?.toUpperCase()} foi ativado.`);
-    }
-
-    if (payload.event === "vip_expired") {
-      await member.roles.remove(env.vipRoleId).catch(() => null);
-      await member.roles.remove(env.vipPlusRoleId).catch(() => null);
-      await member.send("Seu VIP expirou e os cargos foram removidos.");
-    }
-
-    res.json({ ok: true });
-  } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
-  }
-});
-
-webhookApp.listen(env.port, () => console.log(`[bot] webhook listening on ${env.port}`));
 client.login(env.discordToken);
